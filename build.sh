@@ -4,7 +4,8 @@ cd "$(dirname "$0")"
 cargo build --release --locked --manifest-path core/Cargo.toml
 APP="$PWD/build/起身一下.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-xcrun swiftc -swift-version 6 -parse-as-library -default-isolation MainActor -enable-upcoming-feature NonisolatedNonsendingByDefault -O -target arm64-apple-macosx14.0 Timing/*.swift Sources/*.swift -o "$APP/Contents/MacOS/MiBreak" -framework SwiftUI -framework AppKit -framework Security
+swift build -c release --product MiBreak --arch arm64
+cp "$(swift build -c release --arch arm64 --show-bin-path)/MiBreak" "$APP/Contents/MacOS/MiBreak"
 cp LICENSE "$APP/Contents/Resources/LICENSE"
 cp -R licenses "$APP/Contents/Resources/"
 cp core/target/release/mi-break-core "$APP/Contents/Resources/mi-break-core"

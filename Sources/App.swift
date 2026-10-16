@@ -1,3 +1,4 @@
+import BreakCore
 import AppKit
 import SwiftUI
 
@@ -13,6 +14,7 @@ import SwiftUI
     var panelHeight: CGFloat = 560
     var overlays: [NSWindow] = []
     var overlayPreview = false
+    var terminationReplied = false
     var observers: [NSObjectProtocol] = []
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -31,7 +33,29 @@ import SwiftUI
         let center = NSWorkspace.shared.notificationCenter
         observers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.model.sleep(); self?.closeReminder() } })
         observers.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.model.wake() } })
+        model.atoll.onReminderPresented = { [weak self] in
+            guard let self, !model.atoll.fullscreenEnabled else { return }
+            model.engine.recordReminder(at: Date()); model.save()
+        }
         model.start(); showPanel()
+    }
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        model.stop()
+        Task {
+            await model.atoll.shutdown()
+            finishTermination(sender)
+        }
+        Task {
+            do { try await Task.sleep(for: .seconds(3)) } catch { return }
+            model.atoll.disconnectForTermination()
+            finishTermination(sender)
+        }
+        return .terminateLater
+    }
+    private func finishTermination(_ sender: NSApplication) {
+        guard !terminationReplied else { return }
+        terminationReplied = true
+        sender.reply(toApplicationShouldTerminate: true)
     }
     func applicationWillTerminate(_ notification: Notification) { model.stop(); for observer in observers { NSWorkspace.shared.notificationCenter.removeObserver(observer) } }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showPanel(); return true }
@@ -46,6 +70,7 @@ import SwiftUI
         NSApp.activate(ignoringOtherApps: true)
     }
     func update() {
+        if !model.preview { model.atoll.update(engine: model.engine, now: Date()) }
         let text: String
         if model.engine.paused { text = "已暂停" }
         else if model.account == nil && !model.preview { text = "未连接" }
@@ -56,12 +81,13 @@ import SwiftUI
             case .seated: model.engine.seated < 60 ? "已坐不足1分钟" : "已坐 \(Int(model.engine.seated / 60)) 分钟"
             }
         }
-        statusItem?.button?.title = " \(text)"
+        let notchConnected = model.atoll.enabled && model.atoll.connected && !model.preview
+        statusItem?.button?.title = notchConnected ? "" : " \(text)"
         statusItem?.button?.toolTip = "起身一下 · \(model.status) · 本轮已坐 \(durationText(model.engine.seated))，\(Int(model.engine.target / 60)) 分钟提醒"
         if !overlays.isEmpty && !overlayPreview {
             if model.engine.paused || model.engine.presence == .unknown || model.engine.seated == 0 { closeReminder() }
         }
-        if !model.preview && overlays.isEmpty && model.engine.needsReminder(at: Date()) { showReminder(preview: false) }
+        if (model.atoll.fullscreenEnabled || !model.atoll.enabled || !model.atoll.connected) && !model.preview && overlays.isEmpty && model.engine.needsReminder(at: Date()) { showReminder(preview: false) }
     }
     func showReminder(preview: Bool) {
         guard overlays.isEmpty else { return }

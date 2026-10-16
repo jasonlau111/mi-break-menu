@@ -1,9 +1,11 @@
+import BreakCore
 import AppKit
 import Observation
 
 enum PanelPage { case overview, connection, history }
 
 @MainActor @Observable final class Model {
+    let atoll = AtollIntegration()
     var engine = BreakEngine()
     var account: Account?
     var qr: NSImage?

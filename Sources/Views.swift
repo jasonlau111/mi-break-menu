@@ -1,3 +1,4 @@
+import BreakCore
 import AppKit
 import SwiftUI
 
@@ -150,10 +151,20 @@ struct Dashboard: View {
     var setup: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
-                Text("米家连接").font(.system(size: 22, weight: .semibold))
+                Text("连接与提醒").font(.system(size: 22, weight: .semibold))
                 Spacer()
                 Button { model.page = .overview } label: { Image(systemName: "xmark").frame(width: 28, height: 28) }.buttonStyle(QuietPressStyle()).help("返回主面板")
             }
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle("Atoll 刘海显示", isOn: Binding(get: { model.atoll.enabled }, set: { model.atoll.setEnabled($0) }))
+                Text(model.atoll.status).font(.system(size: 11)).foregroundStyle(muted)
+                if model.atoll.enabled && !model.atoll.connected {
+                    Button("连接并授权 Atoll") { model.atoll.retryAuthorization() }.buttonStyle(.bordered)
+                    Text("在 Atoll 设置中开启扩展与 RPC 服务，再允许起身一下。仅同步本机计时状态。").font(.system(size: 10)).foregroundStyle(muted)
+                }
+                Toggle("同时使用全屏提醒", isOn: Binding(get: { model.atoll.fullscreenEnabled }, set: { model.atoll.fullscreenEnabled = $0 }))
+            }.font(.system(size: 12)).toggleStyle(.switch)
+            Divider()
             connection
             Text(model.message).font(.system(size: 11)).foregroundStyle(muted).fixedSize(horizontal: false, vertical: true)
             if let last = model.lastRead { Text("最近同步 \(last.formatted(date: .omitted, time: .standard))").font(.system(size: 10)).foregroundStyle(muted) }

@@ -1,0 +1,14 @@
+{
+  "originHash" : "9a1011b8bc2e815c03d2918e250ba69c33d577e27bad0abdba66bfa99a8eef55",
+  "pins" : [
+    {
+      "identity" : "atollrpc",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Ebullioscopic/AtollRPC.git",
+      "state" : {
+        "revision" : "d6005a8a522f19d155d31cff872099ea8095f9dc"
+      }
+    }
+  ],
+  "version" : 3
+}

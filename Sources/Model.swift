@@ -7,6 +7,7 @@ enum PanelPage { case overview, connection, history }
 @MainActor @Observable final class Model {
     let atoll = AtollIntegration()
     var engine = BreakEngine()
+    private var presenceResolver = PresenceResolver()
     var account: Account?
     var qr: NSImage?
     var candidates: [Sensor] = []
@@ -58,20 +59,35 @@ enum PanelPage { case overview, connection, history }
     func tick() {
         now = Date()
         if !preview {
-            engine.advance(to: now)
+            if !engine.paused { resolvePresence(at: now) }
+            else { engine.advance(to: now) }
             if account != nil && !pairing && !busy && !engine.paused && now.timeIntervalSince(lastAttempt) >= 15 { refresh() }
             if now.timeIntervalSince(lastSaved) >= 30 { save() }
         }
         onTick?()
+    }
+    private func resolvePresence(at time: Date) {
+        let effective = presenceResolver.resolve(lastInput: InputActivity.lastInput(at: time), at: time)
+        engine.observe(effective, at: time)
+    }
+    private func invalidatePresence(at time: Date) {
+        presenceResolver.reset(); engine.invalidate(at: time)
+    }
+    var restingWithoutInput: Bool { presenceResolver.restingWithoutInput }
+    var presenceExplanation: String {
+        if engine.paused { return "监测已暂停" }
+        if presenceResolver.restingWithoutInput { return "检测到附近有人，未操作电脑 · 继续休息" }
+        if presenceResolver.waitingForInput { return "检测到有人 · 等待键鼠或触控板操作" }
+        return engine.presence == .away ? "传感器无人 · 休息计时中" : engine.presence == .seated ? "已确认在座 · 人在＋电脑操作" : "等待有效传感器状态"
     }
     func save() {
         guard !preview else { return }
         do { guard let journal else { return }; try journal.save(engine); storageError = nil; lastSaved = Date() }
         catch { storageError = error.localizedDescription }
     }
-    func stop() { timerTask?.cancel(); pairTask?.cancel(); readTask?.cancel(); bridge.cancel(); engine.invalidate(at: Date()); save() }
-    func sleep() { generation += 1; readTask?.cancel(); bridge.cancel(); engine.invalidate(at: Date()); save(); onTick?() }
-    func wake() { engine.invalidate(at: Date()); lastAttempt = .distantPast }
+    func stop() { timerTask?.cancel(); pairTask?.cancel(); readTask?.cancel(); bridge.cancel(); invalidatePresence(at: Date()); save() }
+    func sleep() { generation += 1; readTask?.cancel(); bridge.cancel(); invalidatePresence(at: Date()); save(); onTick?() }
+    func wake() { invalidatePresence(at: Date()); lastAttempt = .distantPast }
     func readRequest(_ account: Account) throws -> [String: Any] {
         let session = try JSONSerialization.jsonObject(with: JSONEncoder().encode(account.session))
         return ["op":"read", "session":session, "did":account.sensor.did, "model":account.sensor.model]
@@ -86,14 +102,17 @@ enum PanelPage { case overview, connection, history }
                 let reply = try await bridge.call(readRequest(account))
                 guard version == generation else { return }
                 guard let reading = reply.reading else { throw AppFailure.message("未返回传感器状态") }
-                engine.observe(reading.presence, at: Date()); lastRead = Date(); message = reading.note
+                let receivedAt = Date()
+                presenceResolver.observe(reading.presence, at: receivedAt)
+                if !engine.paused { resolvePresence(at: receivedAt) }
+                lastRead = receivedAt; message = reading.note
                 if let name = reading.deviceName, !name.isEmpty, name != account.sensor.name {
                     let updated = Account(session: account.session, sensor: Sensor(name: name, model: account.sensor.model, did: account.sensor.did, supported: account.sensor.supported))
                     try Vault.save(updated); self.account = updated
                 }
             } catch {
                 guard version == generation else { return }
-                engine.invalidate(at: Date()); message = error.localizedDescription
+                invalidatePresence(at: Date()); message = error.localizedDescription
             }
             save(); onTick?()
         }
@@ -101,7 +120,7 @@ enum PanelPage { case overview, connection, history }
     func pair() {
         guard !busy, !pairing, !preview else { return }
         pairing = true; candidates = []; pendingSession = nil; qr = nil; message = "正在生成二维码…"
-        engine.invalidate(at: Date())
+        invalidatePresence(at: Date())
         pairTask = Task {
             defer { pairing = false; qr = nil }
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("mi-break-" + UUID().uuidString)
@@ -130,18 +149,18 @@ enum PanelPage { case overview, connection, history }
         do {
             try Vault.save(value)
             generation += 1; account = value; pendingSession = nil; candidates = []; page = .overview
-            engine.invalidate(at: Date()); message = "已绑定，正在验证真实状态"; lastAttempt = .distantPast
+            invalidatePresence(at: Date()); message = "已绑定，正在验证真实状态"; lastAttempt = .distantPast
             refresh()
         } catch { message = error.localizedDescription }
     }
     func forget() {
         guard !busy, !pairing else { return }
-        do { try Vault.remove(); generation += 1; account = nil; pendingSession = nil; candidates = []; engine.invalidate(at: Date()); message = "已退出米家，本机历史记录保留"; save() }
+        do { try Vault.remove(); generation += 1; account = nil; pendingSession = nil; candidates = []; invalidatePresence(at: Date()); message = "已退出米家，本机历史记录保留"; save() }
         catch { message = error.localizedDescription }
     }
     func snooze() { engine.snooze(at: Date()); save(); onTick?() }
     func overtime(_ minutes: Int?) { engine.setOvertime(minutes, at: Date()); save(); onTick?() }
-    func pause() { engine.setPaused(!engine.paused, at: Date()); lastAttempt = .distantPast; save(); onTick?() }
+    func pause() { presenceResolver.reset(); engine.setPaused(!engine.paused, at: Date()); lastAttempt = .distantPast; save(); onTick?() }
     func configure(work: Int, rest: Int) { engine.workMinutes = work; engine.restMinutes = rest; save() }
     var summary: DaySummary { engine.summary(day: selectedDay, now: now) }
     var status: String {

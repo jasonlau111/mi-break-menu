@@ -43,6 +43,7 @@ struct SeatIllustration: View {
 
 struct Dashboard: View {
     @Bindable var model: Model
+    var startRest: () -> Void
     var previewReminder: () -> Void
     var quit: () -> Void
     var panelHeight: CGFloat = 560
@@ -126,14 +127,20 @@ struct Dashboard: View {
                 Button("连接米家传感器") { model.page = .connection }.buttonStyle(.borderedProminent).foregroundStyle(.black).controlSize(.large)
             } else {
                 HStack {
-                    Text(ready ? "已归零，等待下次入座" : "本轮已离座 \(clockText(model.engine.rest))")
+                    Text(ready ? "已归零，等待下次入座" : !away && model.engine.rest > 0 ? "还需休息 \(clockText(model.engine.remainingRest))" : "本轮已离座 \(clockText(model.engine.rest))")
                     Spacer()
-                    Button("预览提醒", action: previewReminder).buttonStyle(.plain)
+                    Button(action: startRest) {
+                        Label(ready ? "休息完成" : away ? "查看休息" : "去休息", systemImage: "figure.walk")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(ink).padding(.horizontal, 13).padding(.vertical, 7)
+                            .background(mint, in: Capsule())
+                    }.buttonStyle(QuietPressStyle()).disabled(!known || ready)
+                        .help("打开正式休息页，确认离座后开始累计休息")
                 }.font(.system(size: 11)).foregroundStyle(muted)
             }
             HStack(spacing: 7) {
                 Circle().fill(known ? Color(red: 0.61, green: 0.73, blue: 0.51) : muted).frame(width: 5, height: 5)
-                Text(model.preview ? "界面预览 · 示例数据" : model.engine.paused ? "监测已暂停" : known ? "座位传感器已连接" : model.message).font(.system(size: 11)).foregroundStyle(muted).lineLimit(2)
+                Text(model.preview ? "界面预览 · 示例数据" : model.engine.paused ? "监测已暂停" : model.presenceExplanation).font(.system(size: 11)).foregroundStyle(muted).lineLimit(2)
                 Spacer(minLength: 4)
                 Button { model.refresh() } label: { Image(systemName: "arrow.clockwise") }.disabled(model.busy || model.account == nil || model.engine.paused).help("刷新状态")
                 Button { model.page = .connection } label: { Image(systemName: "slider.horizontal.3") }.help("米家账号与连接")
@@ -249,7 +256,11 @@ struct ReminderView: View {
             Text(title).font(.system(size: 48, weight: .medium)).multilineTextAlignment(.center)
             Text(detail).font(.title3).foregroundStyle(.secondary).multilineTextAlignment(.center).lineSpacing(6)
             Text(clockText(model.engine.remainingRest)).font(.system(size: 88, weight: .light, design: .rounded)).monospacedDigit().foregroundStyle(mint)
-            Text("本轮还需离座的时间").font(.subheadline).foregroundStyle(.secondary)
+            Text(model.engine.presence == .away ? "正在累计离座时间" : "休息计时已暂停 · 等待确认离座").font(.subheadline).foregroundStyle(.secondary)
+            if !isPreview {
+                Text("\(model.presenceExplanation) · 最近读取 \(model.lastRead?.formatted(date: .omitted, time: .standard) ?? "暂无")")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             HStack(spacing: 16) {
                 Button(isPreview ? "关闭预览" : "稍后 5 分钟") { if !isPreview { model.snooze() }; dismiss() }.keyboardShortcut(.cancelAction)
                 if !isPreview {
@@ -270,8 +281,10 @@ struct ReminderView: View {
     }
     var detail: String {
         if model.engine.presence == .unknown { return "检测恢复前，休息计时暂停。" }
+        if model.engine.presence == .away && model.restingWithoutInput { return "附近检测到人，但没有电脑操作。\n继续累计本轮休息，操作电脑后确认回座。" }
+        if model.engine.presence == .away { return "已确认离座，正在累计休息。\n达到本轮目标后会自动关闭提醒。" }
         if model.engine.rest > 0 { return "已离座 \(clockText(model.engine.rest))，还差 \(clockText(model.engine.remainingRest)) 达到本轮目标。\n短暂活动也有价值，再给自己一点时间。" }
-        return "这一轮已在座 \(durationText(model.engine.seated))。\n离开座位，给身体 \(model.engine.restMinutes) 分钟。"
+        return "这一轮已在座 \(durationText(model.engine.seated))。\n传感器仍报告有人；确认无人后开始累计休息。"
     }
 }
 

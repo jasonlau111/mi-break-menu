@@ -119,12 +119,13 @@ import AtollRPC
     func disconnectForTermination() { client.disconnect() }
     func shutdown() async {
         stopping = true
-        // Disconnect first to finish any pending SDK request, then remove our activity.
+        task?.cancel()
         client.disconnect()
-        await task?.value
-        if ownsActivity {
-            do { try await client.connect(); try await client.dismissLiveActivity(activityID: activityID) } catch { }
+        // Do not reconnect the SDK while its cancelled receive loop is unwinding.
+        // The fixed app/activity identity also removes leftovers from a prior run.
+        if enabled || ownsActivity {
+            let removed = await AtollCleanup.dismiss()
+            if removed { ownsActivity = false; presented = nil }
         }
-        client.disconnect()
     }
 }

@@ -25,7 +25,7 @@ import SwiftUI
         item.button?.target = self; item.button?.action = #selector(togglePanel)
         panelHeight = min(560, max(360, (NSScreen.main?.visibleFrame.height ?? 800) - 40))
         popover.behavior = .transient
-        let host = NSHostingController(rootView: Dashboard(model: model, previewReminder: { [weak self] in self?.showReminder(preview: true) }, quit: { NSApp.terminate(nil) }, panelHeight: panelHeight))
+        let host = NSHostingController(rootView: Dashboard(model: model, startRest: { [weak self] in self?.closeReminder(); self?.showReminder(preview: false) }, previewReminder: { [weak self] in self?.showReminder(preview: true) }, quit: { NSApp.terminate(nil) }, panelHeight: panelHeight))
         host.sizingOptions = []
         popover.contentViewController = host
         popover.contentSize = NSSize(width: 430, height: panelHeight)

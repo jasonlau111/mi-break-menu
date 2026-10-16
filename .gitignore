@@ -1,0 +1,16 @@
+build/
+.build/
+core/target/
+.DS_Store
+*.log
+
+# Local credentials, history and recovery files
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.keychain*
+history.json
+backup/
